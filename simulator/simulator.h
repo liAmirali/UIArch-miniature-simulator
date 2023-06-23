@@ -1,3 +1,4 @@
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6,32 +7,32 @@
 #define TXT_MEM_SIZE 8192
 #define MEM_SIZE 65535
 
-const int OPC_ADD = 0;
-const int OPC_SUB = 1;
-const int OPC_SLT = 2;
-const int OPC_OR = 3;
-const int OPC_NAND = 4;
-const int OPC_ADDI = 5;
-const int OPC_SLTI = 6;
-const int OPC_ORI = 7;
-const int OPC_LUI = 8;
-const int OPC_LW = 9;
-const int OPC_SW = 10;
-const int OPC_BEQ = 11;
-const int OPC_JALR = 12;
-const int OPC_J = 13;
-const int OPC_HALT = 14;
+#define OPC_ADD 0
+#define OPC_SUB 1
+#define OPC_SLT 2
+#define OPC_OR 3
+#define OPC_NAND 4
+#define OPC_ADDI 5
+#define OPC_SLTI 6
+#define OPC_ORI 7
+#define OPC_LUI 8
+#define OPC_LW 9
+#define OPC_SW 10
+#define OPC_BEQ 11
+#define OPC_JALR 12
+#define OPC_J 13
+#define OPC_HALT 14
 
-const int ALU_ADD = 0;
-const int ALU_SUB = 1;
-const int ALU_SLT = 2;
-const int ALU_OR = 3;
-const int ALU_NAND = 4;
+#define ALU_ADD 0
+#define ALU_SUB 1
+#define ALU_SLT 2
+#define ALU_OR 3
+#define ALU_NAND 4
 
 struct Instruction
 {
     /** 0 -> R-type, 1 -> I-type and 2 -> J-type */
-    size_t instType; 
+    size_t instType;
     char bits[33];
     int opcode;
     int rs;
@@ -65,3 +66,40 @@ struct ControlUnit
     /** is 1 if it is a specifically a jump to register instruction */
     int JumpReg;
 };
+
+/**
+ * Loads the machine file code into the memory, acts as the loader
+ */
+size_t load_memory(int memory[MEM_SIZE], const char *machine_code_file_name);
+
+/**
+ * Updates the control signals based on the given opcode
+ */
+void update_control_signals(const int opcode, struct ControlUnit *cu);
+
+/**
+ * Decodes the raw string binary instruction and creates a Instruction struct
+ */
+struct Instruction *decode_instruction(char *raw_instruction);
+
+/**
+ * It is supposed to extend any 16 bit input to a 32 bit output, but when the numbers are in decimals, it doesn't really matter.
+ * Except for the move 16bit to upper extention
+ */
+int extention_unit(const int input, const int op);
+
+/**
+ * The Arithmetic and Logic Unit of the system. Takes two input and does an operation based on the op signal.
+ * If the output is zero, the zero signal will be set to 1
+ */
+int alu(const int operand_a, const int operand_b, const int op, int *zero);
+
+/**
+ * Converts a decimal number to a 32 bit char array
+ */
+void convert_dec_2_32bit(const int decimal_number, char bits[33]);
+
+/**
+ * Converts a n bit char array to a decimal
+ */
+int convert_binary_to_dec(char *bin, size_t n);
