@@ -8,31 +8,38 @@ int main(int argc, char const *argv[])
 
     size_t PC = 0;
 
-    if (argc < 2) 
+    if (argc < 2)
     {
-        printf("Please include the machine code as an argument to the executable.");
-        exit(0);
+        printf("Please include the machine code as an argument to the executable.\n");
+        exit(1);
     }
 
     // Loading the data into memory
     size_t text_data_size = load_memory(memory, argv[1]);
+    int instructions_executed = 0;
+    int used_memory = 0;
+    int used_registers = 0;
 
     char curr_instruction[33];
-    struct Instruction *instruction;
+    struct Instruction *instruction = (struct Instruction *)malloc(sizeof(struct Instruction));
     while (1)
     {
         // Fetching the instruction from the text and data memory
         int dec_instruction = memory[PC];
+
+        printf("memory[%d]=%d\n", PC, dec_instruction);
+
         convert_dec_2_32bit(dec_instruction, curr_instruction);
 
         // Decoding the instruction and forming the instruction struct
-        instruction = decode_instruction(curr_instruction);
+        decode_instruction(curr_instruction, instruction);
 
         // Updating control signals
         update_control_signals(instruction->opcode, &controlUnit);
 
         int data1 = register_file[instruction->rs];
         int data2 = register_file[instruction->rt];
+
         int write_register = (controlUnit.RegDst == 0) ? instruction->rt : instruction->rd;
         int extended = extention_unit(instruction->imm, controlUnit.ExtOp);
 
@@ -41,14 +48,29 @@ int main(int argc, char const *argv[])
         int alu_zero;
         int alu_out = alu(data1, alu_second_input, controlUnit.ALUOp, &alu_zero);
 
-        int memory_out = memory[alu_out];
+        if (controlUnit.MemWrite)
+        {
+            memory[alu_out] = data2;
+            used_memory += 1;
+        }
+
+        int memory_out = 0;
+        if (controlUnit.MemRead)
+        {
+            memory_out = memory[alu_out];
+            used_memory += 1;
+        }
 
         int to_reg = (controlUnit.MemtoReg == 0) ? alu_out : memory_out;
 
         int pc_plus_1 = PC + 1;
-        int reg_write_data = (controlUnit.JumpReg == 0) ? pc_plus_1 : to_reg;
+        int reg_write_data = (controlUnit.JumpReg == 0) ? to_reg : pc_plus_1;
 
-        if (controlUnit.RegWrite == 1) register_file[write_register] = reg_write_data;
+        if (controlUnit.RegWrite == 1)
+        {
+            register_file[write_register] = reg_write_data;
+            used_registers += 1;
+        }
 
         int offset = (controlUnit.JumpReg == 1) ? data1 : extended;
 
@@ -63,7 +85,20 @@ int main(int argc, char const *argv[])
 
         if (controlUnit.Jump) new_pc = offset;
 
+        instructions_executed++;
         PC = new_pc;
+
+        // Printing Statistics
+        print_registers(register_file);
+        printf("Number of instructions executed: %d", instructions_executed);
+        printf("Used memory: %d words", used_memory);
+        printf("Written registers: %d words", used_registers);
+
+        if (controlUnit.Halt)
+        {
+            printf("Halting...");
+            exit(0);
+        }
     }
 
     return 0;
@@ -74,7 +109,7 @@ size_t load_memory(int memory[MEM_SIZE], const char *machine_code_file_name)
     FILE *file = fopen(machine_code_file_name, "r");
     if (file == NULL)
     {
-        printf("Cannot open the machine program file.");
+        printf("Cannot open the machine program file.\n");
         exit(1);
     }
 
@@ -89,10 +124,8 @@ size_t load_memory(int memory[MEM_SIZE], const char *machine_code_file_name)
     }
 }
 
-void update_control_signals(const int opcode, struct ControlUnit *cu)
+void update_control_signals(int opcode, struct ControlUnit *cu)
 {
-    int x = 1;
-
     // Setting most occurring values as the default
     cu->MemWrite = 0;
     cu->MemRead = 0;
@@ -103,7 +136,8 @@ void update_control_signals(const int opcode, struct ControlUnit *cu)
     cu->RegDst = 0;
     cu->Branch = 0;
     cu->Jump = 0;
-    cu->JumpReg = x;
+    cu->JumpReg = 0;
+    cu->Halt = 0;
 
     switch (opcode)
     {
@@ -172,24 +206,22 @@ void update_control_signals(const int opcode, struct ControlUnit *cu)
         break;
     case OPC_HALT:
         cu->RegWrite = 0;
-        cu->Jump = 1;
+        cu->Halt = 1;
         break;
     default:
         break;
     }
 }
 
-struct Instruction *decode_instruction(char *raw_instruction)
+void decode_instruction(char *raw_instruction, struct Instruction *instruction)
 {
-    struct Instruction *instruction = (struct Instruction *)malloc(sizeof(struct Instruction));
-
     char opcode[5];
     char rs[5];
     char rt[5];
     char rd[5];
     char imm[17];
 
-    strncpy(opcode, raw_instruction + (32 - 27), 4);
+    strncpy(opcode, raw_instruction + (31 - 27), 4);
 
     int opcode_dec = convert_binary_to_dec(opcode, 4);
     instruction->opcode = opcode_dec;
@@ -197,9 +229,9 @@ struct Instruction *decode_instruction(char *raw_instruction)
     if (opcode_dec >= 0 && opcode_dec <= 4)
     {
         instruction->instType = 0;
-        strncpy(rs, raw_instruction + (32 - 23), 4);
-        strncpy(rt, raw_instruction + (32 - 19), 4);
-        strncpy(rd, raw_instruction + (32 - 15), 4);
+        strncpy(rs, raw_instruction + (31 - 23), 4);
+        strncpy(rt, raw_instruction + (31 - 19), 4);
+        strncpy(rd, raw_instruction + (31 - 15), 4);
 
         instruction->rs = convert_binary_to_dec(rs, 4);
         instruction->rt = convert_binary_to_dec(rt, 4);
@@ -208,9 +240,9 @@ struct Instruction *decode_instruction(char *raw_instruction)
     else if (opcode_dec <= 12)
     {
         instruction->instType = 1;
-        strncpy(rs, raw_instruction + (32 - 23), 4);
-        strncpy(rt, raw_instruction + (32 - 19), 4);
-        strncpy(imm, raw_instruction + (32 - 15), 16);
+        strncpy(rs, raw_instruction + (31 - 23), 4);
+        strncpy(rt, raw_instruction + (31 - 19), 4);
+        strncpy(imm, raw_instruction + (31 - 15), 16);
 
         instruction->rs = convert_binary_to_dec(rs, 4);
         instruction->rt = convert_binary_to_dec(rt, 4);
@@ -219,7 +251,7 @@ struct Instruction *decode_instruction(char *raw_instruction)
     else if (opcode_dec <= 14)
     {
         instruction->instType = 2;
-        strncpy(imm, raw_instruction + (32 - 15), 16);
+        strncpy(imm, raw_instruction + (31 - 15), 16);
 
         instruction->imm = convert_binary_to_dec(imm, 16);
     }
@@ -245,14 +277,19 @@ int alu(const int operand_a, const int operand_b, const int op, int *zero)
     {
     case ALU_ADD:
         out = operand_a + operand_b;
+        break;
     case ALU_SUB:
         out = operand_a - operand_b;
+        break;
     case ALU_SLT:
         out = (operand_a < operand_b) ? 1 : 0;
+        break;
     case ALU_OR:
         out = operand_a | operand_b;
+        break;
     case ALU_NAND:
         out = ~(operand_a & operand_b);
+        break;
     default:
         out = operand_a;
     }
@@ -266,7 +303,18 @@ void convert_dec_2_32bit(const int decimal_number, char bits[33])
 {
     for (int i = 0; i < 32; i++)
     {
-        bits[i] = decimal_number & (1 << i);
+        if (decimal_number & (1 << i))
+            bits[i] = '1';
+        else
+            bits[i] = '0';
+    }
+
+    char temp;
+    for (int i = 0; i < 16; i++)
+    {
+        temp = bits[i];
+        bits[i] = bits[31 - i];
+        bits[31 - i] = temp;
     }
 }
 
@@ -274,9 +322,17 @@ int convert_binary_to_dec(char *bin, size_t n)
 {
     int out = 0;
 
-    for (int i = n - 1; i >= 0; i--)
+    for (int i = 0; i < n; i++)
         if (bin[i] == '1')
-            out += (int)pow(2, i);
+            out += (int)pow(2, n - 1 - i);
 
     return out;
+}
+
+void print_registers(int register_file[REG_COUNT])
+{
+    for (int i = 0; i < REG_COUNT; i++)
+    {
+        printf("register[%d]=%d\n", i, register_file[i]);
+    }
 }

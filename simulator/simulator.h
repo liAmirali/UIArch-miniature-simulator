@@ -65,6 +65,8 @@ struct ControlUnit
     int Jump;
     /** is 1 if it is a specifically a jump to register instruction */
     int JumpReg;
+    /** if 1 the machine will halt after updating PC */
+    int Halt;
 };
 
 /**
@@ -80,7 +82,7 @@ void update_control_signals(const int opcode, struct ControlUnit *cu);
 /**
  * Decodes the raw string binary instruction and creates a Instruction struct
  */
-struct Instruction *decode_instruction(char *raw_instruction);
+void decode_instruction(char *raw_instruction, struct Instruction *inst_out);
 
 /**
  * It is supposed to extend any 16 bit input to a 32 bit output, but when the numbers are in decimals, it doesn't really matter.
